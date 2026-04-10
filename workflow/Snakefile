@@ -1,0 +1,195 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Hi-C Tertiary Analysis — Snakemake Workflow
+# ─────────────────────────────────────────────────────────────────────────────
+# Usage:
+#   snakemake --cores 4
+#   snakemake --cores 4 --config norm=kr
+#   snakemake results/plots/09_overview_chr1.png --cores 1
+# ─────────────────────────────────────────────────────────────────────────────
+
+import sys
+sys.path.insert(0, workflow.basedir + "/..")
+
+configfile: "config/config.yaml"
+
+CHROMS   = config["data"]["chromosomes"]
+NORM     = config["normalization"]["method"]
+OUTDIR   = config["output"]["dir"]
+
+# ── Target rule ───────────────────────────────────────────────────────────────
+rule all:
+    input:
+        # QC
+        f"{OUTDIR}/plots/01_qc_panel.png",
+        f"{OUTDIR}/data/qc_summary.json",
+        # Normalization comparison
+        f"{OUTDIR}/plots/02_normalization_comparison.png",
+        # P(s)
+        f"{OUTDIR}/plots/03_ps_curves.png",
+        f"{OUTDIR}/data/ps_curve_fits.json",
+        # Compartments
+        expand("{outdir}/plots/04_compartments_{chrom}.png",
+               outdir=OUTDIR, chrom=CHROMS),
+        f"{OUTDIR}/data/compartments_summary.json",
+        # TADs
+        expand("{outdir}/plots/05_tads_{chrom}.png",
+               outdir=OUTDIR, chrom=CHROMS),
+        f"{OUTDIR}/data/tads_summary.json",
+        # Loops
+        expand("{outdir}/plots/06_loops_{chrom}.png",
+               outdir=OUTDIR, chrom=CHROMS),
+        f"{OUTDIR}/data/loops_summary.json",
+        # Differential
+        expand("{outdir}/plots/07_differential_{chrom}.png",
+               outdir=OUTDIR, chrom=CHROMS),
+        f"{OUTDIR}/plots/08_scc_summary.png",
+        f"{OUTDIR}/data/differential_summary.json",
+        # Overview
+        expand("{outdir}/plots/09_overview_{chrom}.png",
+               outdir=OUTDIR, chrom=CHROMS),
+
+
+# ── Step 0: generate synthetic data ──────────────────────────────────────────
+rule generate_data:
+    output:
+        data_a = f"{OUTDIR}/data/raw_condition_A.npy",
+        data_b = f"{OUTDIR}/data/raw_condition_B.npy",
+        meta   = f"{OUTDIR}/data/metadata.json",
+    params:
+        n_bins      = config["synthetic"]["n_bins"],
+        resolution  = config["data"]["resolution"],
+        seed        = config["synthetic"]["seed"],
+    script:
+        "scripts/snk_generate_data.py"
+
+
+# ── Step 1: QC ────────────────────────────────────────────────────────────────
+rule qc:
+    input:
+        data_a = f"{OUTDIR}/data/raw_condition_A.npy",
+    output:
+        plot   = f"{OUTDIR}/plots/01_qc_panel.png",
+        json   = f"{OUTDIR}/data/qc_summary.json",
+    params:
+        resolution = config["data"]["resolution"],
+        chrom      = CHROMS[0],
+    script:
+        "scripts/snk_qc.py"
+
+
+# ── Step 2: Normalization ─────────────────────────────────────────────────────
+rule normalize:
+    input:
+        data_a = f"{OUTDIR}/data/raw_condition_A.npy",
+    output:
+        norm_a = f"{OUTDIR}/data/norm_condition_A_{NORM}.npy",
+        norm_b = f"{OUTDIR}/data/norm_condition_B_{NORM}.npy",
+        plot   = f"{OUTDIR}/plots/02_normalization_comparison.png",
+    params:
+        method = NORM,
+    script:
+        "scripts/snk_normalize.py"
+
+
+# ── Step 3: Distance Decay ────────────────────────────────────────────────────
+rule distance_decay:
+    input:
+        norm_a = f"{OUTDIR}/data/norm_condition_A_{NORM}.npy",
+    output:
+        plot   = f"{OUTDIR}/plots/03_ps_curves.png",
+        json   = f"{OUTDIR}/data/ps_curve_fits.json",
+    params:
+        resolution = config["data"]["resolution"],
+        chroms     = CHROMS,
+    script:
+        "scripts/snk_ps_curve.py"
+
+
+# ── Step 4: Compartments ──────────────────────────────────────────────────────
+rule compartments:
+    input:
+        norm_a = f"{OUTDIR}/data/norm_condition_A_{NORM}.npy",
+    output:
+        plots  = expand("{outdir}/plots/04_compartments_{chrom}.png",
+                        outdir=OUTDIR, chrom=CHROMS),
+        json   = f"{OUTDIR}/data/compartments_summary.json",
+        eigen  = f"{OUTDIR}/data/compartment_eigenvectors.npy",
+    params:
+        resolution   = config["data"]["resolution"],
+        chroms       = CHROMS,
+        n_quantiles  = config["compartments"]["saddle_n_quantiles"],
+    script:
+        "scripts/snk_compartments.py"
+
+
+# ── Step 5: TADs ──────────────────────────────────────────────────────────────
+rule tads:
+    input:
+        norm_a = f"{OUTDIR}/data/norm_condition_A_{NORM}.npy",
+    output:
+        plots  = expand("{outdir}/plots/05_tads_{chrom}.png",
+                        outdir=OUTDIR, chrom=CHROMS),
+        json   = f"{OUTDIR}/data/tads_summary.json",
+        ins    = f"{OUTDIR}/data/insulation_scores.npy",
+        bounds = f"{OUTDIR}/data/tad_boundaries.json",
+    params:
+        resolution  = config["data"]["resolution"],
+        chroms      = CHROMS,
+        window      = config["tads"]["insulation_window"],
+        threshold   = config["tads"]["boundary_delta_threshold"],
+    script:
+        "scripts/snk_tads.py"
+
+
+# ── Step 6: Loops ─────────────────────────────────────────────────────────────
+rule loops:
+    input:
+        norm_a = f"{OUTDIR}/data/norm_condition_A_{NORM}.npy",
+    output:
+        plots  = expand("{outdir}/plots/06_loops_{chrom}.png",
+                        outdir=OUTDIR, chrom=CHROMS),
+        json   = f"{OUTDIR}/data/loops_summary.json",
+        bedpe  = f"{OUTDIR}/data/loops.bedpe",
+    params:
+        resolution  = config["data"]["resolution"],
+        chroms      = CHROMS,
+        **config["loops"],
+    script:
+        "scripts/snk_loops.py"
+
+
+# ── Step 7: Differential ──────────────────────────────────────────────────────
+rule differential:
+    input:
+        norm_a = f"{OUTDIR}/data/norm_condition_A_{NORM}.npy",
+        norm_b = f"{OUTDIR}/data/norm_condition_B_{NORM}.npy",
+        eigen  = f"{OUTDIR}/data/compartment_eigenvectors.npy",
+        ins    = f"{OUTDIR}/data/insulation_scores.npy",
+    output:
+        plots  = expand("{outdir}/plots/07_differential_{chrom}.png",
+                        outdir=OUTDIR, chrom=CHROMS),
+        scc    = f"{OUTDIR}/plots/08_scc_summary.png",
+        json   = f"{OUTDIR}/data/differential_summary.json",
+    params:
+        resolution  = config["data"]["resolution"],
+        chroms      = CHROMS,
+        **config["differential"],
+    script:
+        "scripts/snk_differential.py"
+
+
+# ── Step 8: Summary overview ──────────────────────────────────────────────────
+rule overview:
+    input:
+        norm_a = f"{OUTDIR}/data/norm_condition_A_{NORM}.npy",
+        eigen  = f"{OUTDIR}/data/compartment_eigenvectors.npy",
+        ins    = f"{OUTDIR}/data/insulation_scores.npy",
+        loops  = f"{OUTDIR}/data/loops_summary.json",
+    output:
+        plots  = expand("{outdir}/plots/09_overview_{chrom}.png",
+                        outdir=OUTDIR, chrom=CHROMS),
+    params:
+        resolution = config["data"]["resolution"],
+        chroms     = CHROMS,
+    script:
+        "scripts/snk_overview.py"

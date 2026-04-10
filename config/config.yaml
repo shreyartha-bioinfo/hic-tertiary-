@@ -1,0 +1,61 @@
+# Hi-C Tertiary Analysis Pipeline Configuration
+# ================================================
+
+# ── Data ──────────────────────────────────────────────────────────────────────
+data:
+  mode: synthetic           # "synthetic" | "cooler" | "numpy"
+  cooler_path: null         # path to .cool file (if mode=cooler)
+  numpy_path: null          # path to .npy contact matrix (if mode=numpy)
+  resolution: 50000         # bin size in bp
+  chromosomes: ["chr1", "chr2", "chr3"]
+
+# ── Synthetic Data Parameters ─────────────────────────────────────────────────
+synthetic:
+  n_bins: 200               # bins per chromosome
+  n_chromosomes: 3
+  seed: 42
+  noise_level: 1.0          # 1.0 = realistic Poisson noise
+  n_tads_approx: 10         # approximate number of TADs per chromosome
+
+# ── Normalization ─────────────────────────────────────────────────────────────
+normalization:
+  method: ice               # "ice" | "kr" | "vc"
+  ice_max_iter: 200
+  ice_tolerance: 1e-5
+  min_nnz: 10               # min non-zero entries to keep a bin
+
+# ── Distance Decay ────────────────────────────────────────────────────────────
+distance_decay:
+  max_dist_mb: 5.0          # maximum distance to consider (Mb)
+  n_bins_log: 50            # number of log-spaced distance bins
+
+# ── Compartments ──────────────────────────────────────────────────────────────
+compartments:
+  n_components: 3           # PCA components to compute
+  saddle_n_quantiles: 50    # quantiles for saddle plot
+
+# ── TADs ──────────────────────────────────────────────────────────────────────
+tads:
+  insulation_window: 10     # sliding window half-size in bins
+  boundary_delta_threshold: 0.1   # min drop in insulation score to call boundary
+  min_tad_size_bins: 3      # minimum TAD size in bins
+
+# ── Loops ─────────────────────────────────────────────────────────────────────
+loops:
+  min_dist_bins: 5          # minimum loop span in bins
+  max_dist_bins: 150        # maximum loop span in bins
+  enrichment_threshold: 2.0 # min O/E enrichment to call a loop
+  apa_flank: 10             # bins around loop anchor for APA pile-up
+
+# ── Differential ──────────────────────────────────────────────────────────────
+differential:
+  pseudocount: 1.0          # added before log2 FC computation
+  scc_max_dist_bins: 100    # max stratum distance for SCC
+
+# ── Output ────────────────────────────────────────────────────────────────────
+output:
+  dir: results
+  plot_dpi: 150
+  plot_format: png          # png | pdf | svg
+  colormap_contacts: RdYlBu_r
+  colormap_diverging: RdBu_r
